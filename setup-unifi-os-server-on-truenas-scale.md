@@ -22,13 +22,27 @@ timedatectl list-timezones
 
 ## 1. Create the dataset
 
-In the TrueNAS UI: **Datasets** → select your pool → **Add Dataset**. Name it `unifi-os-server`, nested under whatever parent you keep app data in (this guide assumes `apps`). Leave the defaults otherwise.
+In the TrueNAS UI: **Datasets** → select your pool → **Add Dataset** → Dataset preset: Apps. Name it `unifi-os-server`, nested under whatever parent you keep applications data in. Leave the rest to their defaults otherwise.
 
-It mounts at `/mnt/<POOL>/apps/unifi-os-server`. Replace `<POOL>` with your pool name in every command below.
+It mounts at `/mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server`. 
+
+> **N.B.:** Replace `<POOL>` and `<YOUR-APP-DATASET>` with your pool name and parent dataset in every command below.
+
+### Permissions
+
+Next make sure the following permissions are set on both this new dataset and its parent (no need to do this for the pool). The old Unifi Controller app required this to work, so it's safe to presume it still is a requirement:
+
+| Who              | Permissions             |
+| ---------------- | ----------------------- |
+| User — `apps`    | *Allow \| Full Control* |
+| User — `netdata` | *Allow \| Full Control* |
+| Group — `docker` | *Allow \| Full Control* |
+
+> Select ***Apply permissions recursively*** to make sure the permissions are set correctly.
 
 ## 2. Create the data directories
 
-Over SSH as root:
+Connect to your TrueNAS via SSH with an administrative account, or via the Shell in the UI administration site, then issue this command:
 
 ```sh
 mkdir -p /mnt/<POOL>/apps/unifi-os-server/{persistent,var-log,data,srv,var-lib-unifi,var-lib-mongodb,etc-rabbitmq-ssl}
@@ -36,8 +50,28 @@ mkdir -p /mnt/<POOL>/apps/unifi-os-server/{persistent,var-log,data,srv,var-lib-u
 
 ## 3. Write the compose file
 
+Use the following command to write a file named `uos-compose.yaml` at the root of the user.
+
+- `/sys/fs/cgroup` is the host's live kernel cgroup filesystem, **not** a directory under the app dataset. UOS runs every component as a systemd service and needs it.
+- No `container_name` — the apps system assigns its own.
+- `UOS_SYSTEM_IP` is only the inform address used for device adoption. It binds nothing; the GUI is reachable on whatever address the host holds.
+- Modify the `11443` port as you wish, but leave the rest as is unless you know what you're doing.
+- Only four ports are required to be published. Optional ones, if wanted:
+
+| Port | Explanation |
+| --- | --- |
+| `5005:5005` | Used for remote debug operations and diagnostics |
+| `9543:9543` | Used for UniFi Talk application communication and management |
+| `6789:6789` | UniFi mobile speed test |
+| `8444:8444` | Secure Portal for Hotspot |
+| `28082:28082` | Device packet capture and support file downloads |
+| `5671:5671` | Traffic Flow logging for UXGs adopted on L2 or L3 networks |
+| `8880:8880`, `8881:8881` and `8882:8882` | Hotspot portal redirection (HTTP) |
+| `5514:5514/udp` | Remote syslog capture |
+| `127.0.0.1:11084` | Used for UniFi Talk TURN (Traversal Using Relays around NAT) services to help handle audio and media traffic streams for VoIP phones behind firewalls |
+
 ```sh
-cat > /root/uos-compose.yaml << 'EOF'
+cat > ~/uos-compose.yaml << 'EOF'
 services:
   unifi-os-server:
     image: ghcr.io/lemker/unifi-os-server:latest
@@ -58,13 +92,13 @@ services:
       - UOS_SYSTEM_IP=<UOS_HOST>
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - /mnt/<POOL>/apps/unifi-os-server/persistent:/persistent
-      - /mnt/<POOL>/apps/unifi-os-server/var-log:/var/log
-      - /mnt/<POOL>/apps/unifi-os-server/data:/data
-      - /mnt/<POOL>/apps/unifi-os-server/srv:/srv
-      - /mnt/<POOL>/apps/unifi-os-server/var-lib-unifi:/var/lib/unifi
-      - /mnt/<POOL>/apps/unifi-os-server/var-lib-mongodb:/var/lib/mongodb
-      - /mnt/<POOL>/apps/unifi-os-server/etc-rabbitmq-ssl:/etc/rabbitmq/ssl
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/persistent:/persistent
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/var-log:/var/log
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data:/data
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/srv:/srv
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/var-lib-unifi:/var/lib/unifi
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/var-lib-mongodb:/var/lib/mongodb
+      - /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/etc-rabbitmq-ssl:/etc/rabbitmq/ssl
     ports:
       - 11443:443
       - 8080:8080
@@ -74,38 +108,29 @@ services:
 EOF
 ```
 
-Notes:
-
-- `/sys/fs/cgroup` is the host's live kernel cgroup filesystem, **not** a directory under the app dataset. UOS runs every component as a systemd service and needs it.
-- No `container_name` — the apps system assigns its own.
-- Only the four required ports are published. Optional ones, if wanted: `5005`, `9543`, `6789`, `8444`, `28082`, `5671`, `8880`, `8881`, `8882`, `5514/udp`, and `127.0.0.1:11084`.
-- `UOS_SYSTEM_IP` is only the inform address used for device adoption. It binds nothing; the GUI is reachable on whatever address the host holds.
-
 ## 4. Substitute your own values
 
-Edit `/root/uos-compose.yaml` and replace the placeholders:
+Edit `~/uos-compose.yaml` and replace the placeholders:
 
 | Placeholder | Replace with |
 | --- | --- |
 | `<POOL>` | Your pool name, so the volume paths match the dataset from step 1 |
+| `<YOUR-APP-DATASET>` | The name of the dataset that contains your applications' data. |
 | `<UOS_HOST>` | The hostname (recommended) or IP address of your TrueNAS host, e.g. `unifi.example.com` or `192.168.1.50` |
+| `UOS_SYSTEM_IP` | Written into the inform URL that adopted devices use to reach the server (`http://<UOS_HOST>:8080/inform`). A hostname is preferable to an IP, since a DHCP change would otherwise orphan every adopted device. |
 | `<TIMEZONE>` | Your tz database name, e.g. `America/Montreal`, `Europe/Berlin`, `UTC` |
-
-If you nested the dataset somewhere other than `apps/`, fix that part of the volume paths too. Adjust the published ports if any conflict with something else on the host.
-
-`UOS_SYSTEM_IP` is written into the inform URL that adopted devices use to reach the server (`http://<UOS_HOST>:8080/inform`). A hostname is preferable to an IP, since a DHCP change would otherwise orphan every adopted device.
 
 Confirm nothing is left unsubstituted:
 
 ```sh
-grep -n '<POOL>\|<UOS_HOST>\|<TIMEZONE>' /root/uos-compose.yaml
+grep -n '<POOL>\|<YOUR-APP-DATASET>\|<UOS_HOST>\|UOS_SYSTEM_IP\|<TIMEZONE>' ~/uos-compose.yaml
 ```
 
-That should print nothing.
+That should print nothing if everything has been subsituted.
 
 ## 5. Deploy through the TrueNAS apps system
 
-> **Expect this first boot to be broken.** The container will come up and stay running, but Postgres, the Network application and the web API will all fail. That is normal at this stage — the image only creates its directory tree under `/data` on this first run, and until that tree exists there is nothing to correct. Step 6 fixes it. Do not skip ahead or redeploy.
+> ⚠️ **Expect this first boot to be broken.** The container will come up and stay running, but Postgres, the Network application and the web API will all fail. That is normal at this stage — the image only creates its directory tree under `/data` on this first run, and until that tree exists there is nothing to correct. Step 6 fixes it. Do not skip ahead or redeploy.
 
 Build the API payload:
 
@@ -121,7 +146,8 @@ Create the app:
 midclt call -j app.create "$(cat /root/uos-payload.json)"
 ```
 
-`-j` waits on the job and shows progress. Passing `-` to read stdin does **not** work — midclt treats it as a literal string argument and the call fails with an `AttributeError` on job lock handling.
+- `-j` waits on the job and shows progress. 
+- Passing `-` to read stdin does **not** work — `midclt` treats it as a literal string argument and the call fails with an `AttributeError` on job lock handling.
 
 The app then appears and is managed normally in the TrueNAS UI.
 
@@ -129,7 +155,7 @@ The app then appears and is managed normally in the TrueNAS UI.
 
 This is the step everything hinges on.
 
-The image chowns the leaf directories its services need, but bind-mounting over `/data` leaves the intermediate directories `root:root 770`. Non-root services (`postgres` uid 10100, `unifi` uid 997, `nginx`) cannot traverse into them and fail — each with a different, misleading symptom.
+The image `chowns` the leaf directories its services need, but bind-mounting over `/data` leaves the intermediate directories `root:root 770`. Non-root services (`postgres` uid 10100, `unifi` uid 997, `nginx`) cannot traverse into them and fail — each with a different, misleading symptom.
 
 Let the container boot once so it creates the tree, then:
 
@@ -148,9 +174,11 @@ docker exec ix-unifi-os-server-unifi-os-server-1 systemctl reset-failed unifi.se
 docker exec ix-unifi-os-server-unifi-os-server-1 systemctl start unifi
 ```
 
-`reset-failed` is needed because systemd will have hit its start-limit ("Start request repeated too quickly") after five attempts.
+> Replace `x-unifi-os-server-unifi-os-server-1` with the name of your Docker image if different.
 
-`unifi.service` is a JVM and takes a minute or two to open port 8081.
+- `reset-failed` is needed because `systemd` will have hit its start-limit ("Start request repeated too quickly") after five attempts.
+
+- `unifi.service` is a JVM and takes a minute or two to open port 8081.
 
 ## 7. Verify
 
@@ -161,7 +189,7 @@ curl -kIs https://127.0.0.1:11443/api/system | head -1
 
 Expect zero failed units and `HTTP/2 200`. A 200 on `/` but 502 on `/api/` means step 6 is incomplete.
 
-Then open `https://<UOS_HOST>:11443`.
+Then open `https://<UOS_HOST>:11443` and you should see the setup wizard.
 
 ---
 
@@ -178,7 +206,7 @@ Then open `https://<UOS_HOST>:11443`.
 
 ## Diagnostic commands
 
-systemd inside the container logs to the journal, not stdout, so `docker logs` goes quiet after the entrypoint. That is normal and not a failure.
+`systemd` inside the container logs to the journal, not `stdout`, so `docker logs` goes quiet after the entrypoint. That is normal and not a failure.
 
 ```sh
 C=ix-unifi-os-server-unifi-os-server-1
@@ -190,7 +218,7 @@ docker exec $C tail -30 /data/unifi-core/logs/errors.log
 docker exec $C ss -lntp
 ```
 
-unifi-core keeps its own logs in `/data/unifi-core/logs/`; `errors.log` is the useful one. Its nginx upstreams are generated into `/data/unifi-core/config/http/upstream-*.conf` — read those to find which backend a route actually points at rather than guessing.
+`unifi-core` keeps its own logs in `/data/unifi-core/logs/`; `errors.log` is the useful one. Its nginx upstreams are generated into `/data/unifi-core/config/http/upstream-*.conf` — read those to find which backend a route actually points at rather than guessing.
 
 ## Known caveat
 
