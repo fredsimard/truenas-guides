@@ -8,15 +8,7 @@ The **Install Custom App** wizard cannot deploy this image: it has no field for 
 
 ### Replace placeholders
 
-`<POOL>`, `<UOS_HOST>` and `<TIMEZONE>` are placeholders. Substitute `<POOL>` as you go; the other two are filled in at step 4.
-
-For timezones, see [List of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Use the value in the **TZ identifier** column, and prefer rows marked Canonical over Link. The list currently reflects release 2026b of the tz database.
-
-Or use this command in the shell of your TrueNAS:
-
-```shell
-timedatectl list-timezones
-```
+`<POOL>`, `<YOUR-APP-DATASET>`, `<UOS_HOST>` and `<TIMEZONE>` are placeholders. Substitute `<POOL>` and `<YOUR-APP-DATASET>` as you go; the other two are filled in at step 4.
 
 ---
 
@@ -45,7 +37,7 @@ Next make sure the following permissions are set on both this new dataset and it
 Connect to your TrueNAS via SSH with an administrative account, or via the Shell in the UI administration site, then issue this command:
 
 ```sh
-mkdir -p /mnt/<POOL>/apps/unifi-os-server/{persistent,var-log,data,srv,var-lib-unifi,var-lib-mongodb,etc-rabbitmq-ssl}
+mkdir -p /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/{persistent,var-log,data,srv,var-lib-unifi,var-lib-mongodb,etc-rabbitmq-ssl}
 ```
 
 ## 3. Write the compose file
@@ -55,6 +47,7 @@ Use the following command to write a file named `uos-compose.yaml` at the root o
 - `/sys/fs/cgroup` is the host's live kernel cgroup filesystem, **not** a directory under the app dataset. UOS runs every component as a systemd service and needs it.
 - No `container_name` — the apps system assigns its own.
 - `UOS_SYSTEM_IP` is only the inform address used for device adoption. It binds nothing; the GUI is reachable on whatever address the host holds.
+- `<TIMEZONE>` : see [List of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). Use the value in the **TZ identifier** column, and prefer rows marked Canonical over Link. The list currently reflects release 2026b of the tz database. Or use this command in the shell of your TrueNAS: `timedatectl list-timezone`
 - Modify the `11443` port as you wish, but leave the rest as is unless you know what you're doing.
 - Only four ports are required to be published. Optional ones, if wanted:
 
@@ -135,15 +128,15 @@ That should print nothing if everything has been subsituted.
 Build the API payload:
 
 ```sh
-jq -n --rawfile c /root/uos-compose.yaml \
+jq -n --rawfile c ~/uos-compose.yaml \
   '{app_name:"unifi-os-server",custom_app:true,custom_compose_config_string:$c}' \
-  > /root/uos-payload.json
+  > ~/uos-payload.json
 ```
 
 Create the app:
 
 ```sh
-midclt call -j app.create "$(cat /root/uos-payload.json)"
+midclt call -j app.create "$(cat ~/uos-payload.json)"
 ```
 
 - `-j` waits on the job and shows progress. 
@@ -160,7 +153,7 @@ The image `chowns` the leaf directories its services need, but bind-mounting ove
 Let the container boot once so it creates the tree, then:
 
 ```sh
-cd /mnt/<POOL>/apps/unifi-os-server/data
+cd /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data
 chmod 775 . postgresql postgresql/14 unifi unifi-core unifi-core/config unifi-core/config/http
 ```
 
