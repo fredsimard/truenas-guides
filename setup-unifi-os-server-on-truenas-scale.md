@@ -149,14 +149,20 @@ This is the step everything hinges on.
 
 The image `chowns` the leaf directories its services need, but bind-mounting over `/data` leaves the intermediate directories `root:root 770`. Non-root services (`postgres` uid 10100, `unifi` uid 997, `nginx`) cannot traverse into them and fail — each with a different, misleading symptom.
 
-Let the container boot once so it creates the tree, then:
+This has to be done in two passes, because `unifi-core` only generates `config/http/` late in its startup, and it cannot get there until the earlier failures are cleared.
+
+### 6a. First pass
+
+Once the container has booted and created its tree under `/data`:
 
 ```sh
 cd /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data
-chmod 775 . postgresql postgresql/14 unifi unifi-core unifi-core/config unifi-core/config/http
+chmod 775 . postgresql postgresql/14 unifi unifi-core
 ```
 
 `775` adds traverse and read without changing ownership.
+
+Only the `root:root` directories need this. The others (`ucs-agent`, `uid`, `ulp-go`, `unifi-directory`, `unifi-identity-update`) are already owned by their own service uids — leave them alone. `ls -la` will show you which is which.
 
 Restart the services that already failed:
 
@@ -166,10 +172,7 @@ docker exec ix-unifi-os-server-unifi-os-server-1 systemctl reset-failed unifi.se
 docker exec ix-unifi-os-server-unifi-os-server-1 systemctl start unifi
 ```
 
-> Replace `x-unifi-os-server-unifi-os-server-1` with the name of your Docker image if different.
-
 - `reset-failed` is needed because `systemd` will have hit its start-limit ("Start request repeated too quickly") after five attempts.
-
 - `unifi.service` is a JVM and takes a minute or two to open port 8081.
 
 ## 7. Verify
