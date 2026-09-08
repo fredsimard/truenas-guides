@@ -200,10 +200,15 @@ If `chmod` reports `No such file or directory` on `unifi-core/config/http`, `uni
 
 ```sh
 docker exec ix-unifi-os-server-unifi-os-server-1 systemctl list-units --failed --no-pager
+curl -kIs https://<UOS_HOST>:11443/api/system | head -1
+
+## or
 curl -kIs https://127.0.0.1:11443/api/system | head -1
 ```
 
-Expect zero failed units and `HTTP/2 200`. A 200 on `/` but 502 on `/api/` means step 6 is incomplete.
+`HTTP/2 200` on a console that has not been through initial setup, or `HTTP/2 401` on one where you have already created an account — both mean the API is reachable and step 6 worked. Only `HTTP/2 502` indicates the permissions are still wrong.
+
+Empty output means nothing is listening yet. Give it more time.
 
 Then open `https://<UOS_HOST>:11443` and you should see the setup wizard.
 
