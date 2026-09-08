@@ -218,17 +218,17 @@ To change an environment variable, a port, or a volume, edit the compose file an
 
 Do **not** edit the rendered file under `/mnt/.ix-apps/`. It is regenerated from the app config and your changes will be overwritten.
 
-Edit `/root/uos-compose.yaml`, then confirm the change landed:
+Edit `~/uos-compose.yaml`, then confirm the change landed:
 
 ```sh
-grep UOS_SYSTEM_IP /root/uos-compose.yaml
+grep UOS_SYSTEM_IP ~/uos-compose.yaml
 ```
 
 Push it:
 
 ```sh
-jq -n --rawfile c /root/uos-compose.yaml '{custom_compose_config_string:$c}' > /root/uos-update.json
-midclt call -j app.update unifi-os-server "$(cat /root/uos-update.json)"
+jq -n --rawfile c ~/uos-compose.yaml '{custom_compose_config_string:$c}' > ~/uos-update.json
+midclt call -j app.update unifi-os-server "$(cat ~/uos-update.json)"
 ```
 
 Note the argument shape differs from `app.create`: `app_name` is a separate first argument, and the compose string goes inside a second object.
