@@ -172,8 +172,29 @@ docker exec ix-unifi-os-server-unifi-os-server-1 systemctl reset-failed unifi.se
 docker exec ix-unifi-os-server-unifi-os-server-1 systemctl start unifi
 ```
 
+> Replace `ix-unifi-os-server-unifi-os-server-1` with your container name if it differs. Find it with `docker ps --format '{{.Names}}' | grep unifi`.
+
 - `reset-failed` is needed because `systemd` will have hit its start-limit ("Start request repeated too quickly") after five attempts.
 - `unifi.service` is a JVM and takes a minute or two to open port 8081.
+
+### 6b. Second pass
+
+Wait for `unifi-core` to finish starting. It will report `activating` for several minutes before going `active`:
+
+```sh
+docker exec ix-unifi-os-server-unifi-os-server-1 systemctl is-active unifi-core
+```
+
+Once it returns `active`, `config/` will have filled with `.yaml` files, certificates and an `http/` subdirectory. Then:
+
+```sh
+cd /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data
+chmod 775 unifi-core/config unifi-core/config/http
+```
+
+That last directory holds the `uos-http.sock` unix socket that nginx proxies every `/api/` route to. Until `nginx` can traverse into it, the web UI loads but stays blank, and every API call returns a JSON 502 with nothing written to the nginx error log.
+
+If `chmod` reports `No such file or directory` on `unifi-core/config/http`, `unifi-core` has not finished starting — wait and retry rather than skipping it.
 
 ## 7. Verify
 
