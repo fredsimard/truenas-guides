@@ -207,6 +207,39 @@ Expect zero failed units and `HTTP/2 200`. A 200 on `/` but 502 on `/api/` means
 
 Then open `https://<UOS_HOST>:11443` and you should see the setup wizard.
 
+## 8. Changing configuration later
+
+To change an environment variable, a port, or a volume, edit the compose file and push it back through the apps system. There is no image to rebuild — the image is pulled as-is; only your compose config changes.
+
+Do **not** edit the rendered file under `/mnt/.ix-apps/`. It is regenerated from the app config and your changes will be overwritten.
+
+Edit `/root/uos-compose.yaml`, then confirm the change landed:
+
+```sh
+grep UOS_SYSTEM_IP /root/uos-compose.yaml
+```
+
+Push it:
+
+```sh
+jq -n --rawfile c /root/uos-compose.yaml '{custom_compose_config_string:$c}' > /root/uos-update.json
+midclt call -j app.update unifi-os-server "$(cat /root/uos-update.json)"
+```
+
+Note the argument shape differs from `app.create`: `app_name` is a separate first argument, and the compose string goes inside a second object.
+
+This recreates the container. Your data lives on the bind mounts, so it survives, along with the permission fixes from step 6.
+
+Expect the same startup behaviour as a fresh install: several minutes before the web UI answers, and `unifi.service` may report a failed start that resolves itself. Be patient before concluding something is broken.
+
+After the container is recreated, re-check the directory that step 6b covered:
+
+```sh
+ls -la /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data/unifi-core/config/http/
+```
+
+The `pre-start` hook wipes and regenerates that directory's contents on every start. If the parent directories lost their `775`, reapply the 6b chmod.
+
 ---
 
 ## Symptom reference
