@@ -245,6 +245,45 @@ ls -la /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data/unifi-core/config/htt
 
 The `pre-start` hook wipes and regenerates that directory's contents on every start. If the parent directories lost their `775`, reapply the 6b chmod.
 
+## 9. `unifi-core` start-pre timeouts
+
+On some hosts `unifi-core` fails to start several times before succeeding. The web UI is unreachable throughout, and `systemctl list-units --failed` shows nothing, because systemd keeps retrying.
+
+Symptoms:
+
+- `systemctl is-active unifi-core` returns `activating` for minutes at a time
+- `systemctl is-active unifi` returns `inactive` — it waits on `unifi-core`
+- `/data/unifi-core/config/http/` is empty, so nginx has no upstreams and the site does not answer
+- `errors.log` fills with `Failed to establish new WS connection for MessageBox: Invalid token` — a side effect, not the cause: each restart rotates the JWKS keypair, invalidating tokens held by open browser tabs
+
+Confirm it with:
+
+```sh
+docker exec ix-unifi-os-server-unifi-os-server-1 sh -c 'journalctl -u unifi-core --no-pager --since "-15min" | grep -i "systemd\|timeout\|failed"'
+```
+
+The signature is repeated 90-second cycles:
+
+```
+systemd[1]: Starting UniFi Core...
+systemd[1]: unifi-core.service: start-pre operation timed out. Terminating.
+systemd[1]: unifi-core.service: Scheduled restart job, restart counter is at N.
+```
+
+`ExecStartPre=/usr/share/unifi-core/app/hooks/pre-start` is slower than the default `TimeoutStartSec` of 90 seconds. It eventually completes — in one observed case on the fifth attempt, in 58 seconds — so the service does come up on its own after roughly 6 to 8 minutes. Nothing is broken; it is just slow.
+
+To avoid the loop, give the hook more room:
+
+```sh
+docker exec ix-unifi-os-server-unifi-os-server-1 mkdir -p /etc/systemd/system/unifi-core.service.d
+docker exec ix-unifi-os-server-unifi-os-server-1 sh -c 'printf "[Service]\nTimeoutStartSec=600\n" > /etc/systemd/system/unifi-core.service.d/override.conf'
+docker exec ix-unifi-os-server-unifi-os-server-1 systemctl daemon-reload
+```
+
+> **This override does not persist.** `/etc/systemd/system` lives in the container's writable layer, not on the bind mounts, so it is lost whenever the container is recreated — including on every `app.update` from step 8. Reapply it after each recreate, or simply wait out the retry loop. A durable fix (bind-mounting the drop-in, or applying it from a compose command) has not been tested here.
+
+Do not `systemctl restart` your way through this. Each manual restart rotates the keys again and resets progress; leaving it alone is faster.
+
 ---
 
 ## Symptom reference
