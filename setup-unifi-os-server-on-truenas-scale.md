@@ -110,7 +110,6 @@ Edit `~/uos-compose.yaml` and replace the placeholders:
 | `<POOL>` | Your pool name, so the volume paths match the dataset from step 1 |
 | `<YOUR-APP-DATASET>` | The name of the dataset that contains your applications' data. |
 | `<UOS_HOST>` | The hostname (recommended) or IP address of your TrueNAS host, e.g. `unifi.example.com` or `192.168.1.50` |
-| `UOS_SYSTEM_IP` | Written into the inform URL that adopted devices use to reach the server (`http://<UOS_HOST>:8080/inform`). A hostname is preferable to an IP, since a DHCP change would otherwise orphan every adopted device. |
 | `<TIMEZONE>` | Your tz database name, e.g. `America/Montreal`, `Europe/Berlin`, `UTC` |
 
 Confirm nothing is left unsubstituted:
