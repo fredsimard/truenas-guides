@@ -116,7 +116,7 @@ Edit `~/uos-compose.yaml` and replace the placeholders:
 Confirm nothing is left unsubstituted:
 
 ```sh
-grep -n '<POOL>\|<YOUR-APP-DATASET>\|<UOS_HOST>\|UOS_SYSTEM_IP\|<TIMEZONE>' ~/uos-compose.yaml
+grep -n '<POOL>\|<YOUR-APP-DATASET>\|<UOS_HOST>\|<TIMEZONE>' ~/uos-compose.yaml
 ```
 
 That should print nothing if everything has been subsituted.
