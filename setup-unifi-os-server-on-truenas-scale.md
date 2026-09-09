@@ -1,5 +1,7 @@
 # UniFi OS Server on TrueNAS (Docker custom app)
 
+> ## ⚠️ I abandoned trying to make this work... there's always something that breaks, permissions that aren't right, errors in updating apps, etc. It's simply not stable enough to use reliably. Use at your own risk. Sept 9, 2026.
+
 Working procedure to have Unifi OS run on TrueNAS Scale 25 as an app, uses the image: `ghcr.io/lemker/unifi-os-server:latest`.
 
 #### Why the Custom App in TrueNAS does not work...
