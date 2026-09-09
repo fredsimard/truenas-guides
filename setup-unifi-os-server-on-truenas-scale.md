@@ -14,6 +14,8 @@ The **Install Custom App** wizard cannot deploy this image: it has no field for 
 
 ## 1. Create the dataset
 
+> **Put the app dataset on SSD if you can.** Application updates unpack thousands of small files with `dpkg`; on spinning disks a single Network update can take the better part of an hour, regardless of how many spindles the pool has.
+
 In the TrueNAS UI: **Datasets** → select your pool → **Add Dataset** → Dataset preset: Apps. Name it `unifi-os-server`, nested under whatever parent you keep applications data in. Leave the rest to their defaults otherwise.
 
 It mounts at `/mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server`. 
@@ -157,10 +159,13 @@ Once the container has booted and created its tree under `/data`:
 
 ```sh
 cd /mnt/<POOL>/<YOUR-APP-DATASET>/unifi-os-server/data
-chmod 775 . postgresql postgresql/14 unifi unifi-core
+mkdir -p unifi-core/rollback
+chmod 775 . postgresql postgresql/14 unifi unifi-core unifi-core/rollback
 ```
 
 `775` adds traverse and read without changing ownership.
+
+`unifi-core/rollback` does not exist yet — create it now. Before updating an application later, `unifi-core` has that application export itself as a rollback backup, and the Network app (uid 997) cannot traverse into a directory `unifi-core` creates as root. Without this the export fails with a 500 and every application update aborts before downloading anything. `unifi-core` recreates `rollback/network/` beneath it as `root:root 770` on each attempt; making the parent traversable is what matters.
 
 Only the `root:root` directories need this. The others (`ucs-agent`, `uid`, `ulp-go`, `unifi-directory`, `unifi-identity-update`) are already owned by their own service uids — leave them alone. `ls -la` will show you which is which.
 
@@ -176,6 +181,7 @@ docker exec ix-unifi-os-server-unifi-os-server-1 systemctl start unifi
 
 - `reset-failed` is needed because `systemd` will have hit its start-limit ("Start request repeated too quickly") after five attempts.
 - `unifi.service` is a JVM and takes a minute or two to open port 8081.
+- The `start` may report failure and then succeed on its own — `Restart=always` retries, and `systemctl start` only reports the first attempt.
 
 ### 6b. Second pass
 
@@ -195,6 +201,26 @@ chmod 775 unifi-core/config unifi-core/config/http
 That last directory holds the `uos-http.sock` unix socket that nginx proxies every `/api/` route to. Until `nginx` can traverse into it, the web UI loads but stays blank, and every API call returns a JSON 502 with nothing written to the nginx error log.
 
 If `chmod` reports `No such file or directory` on `unifi-core/config/http`, `unifi-core` has not finished starting — wait and retry rather than skipping it.
+
+### 6c. Allow the expired Debian index
+
+The image is based on Debian 11 (bullseye), whose security repository index has expired. The application installer runs `apt-get update` and treats any non-zero exit as fatal, so every application install and update fails until this is set:
+
+```
+Install failed with non-zero exit code 1, error message: Failed to run apt-get update:
+E: Release file for http://deb.debian.org/debian-security/dists/bullseye-security/InRelease is expired
+```
+
+```sh
+docker exec ix-unifi-os-server-unifi-os-server-1 sh -c 'echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until'
+docker exec ix-unifi-os-server-unifi-os-server-1 sh -c 'apt-get update 2>&1 | tail -5'
+```
+
+The second command should finish without an `E:` line.
+
+> This disables apt's protection against being served a stale index — the standard approach for an archived Debian release, and reasonable here because the staleness is in the vendor's base image rather than something an attacker introduced. Decide for yourself whether that trade suits you.
+
+> This file lives in the container's writable layer, not on the bind mounts, so it is lost whenever the container is recreated — including on every `app.update`. Reapply it afterwards.
 
 ## 7. Verify
 
